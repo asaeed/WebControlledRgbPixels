@@ -1,0 +1,231 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=0.552, user-scalable=no"/>
+    <style>
+      body {
+        margin: 0px;
+        padding: 0px;
+      }
+      canvas {
+        border: 1px solid #9C9898;
+      }
+    </style>
+    <script src="socket.io/socket.io.js"></script>
+    <script src="http://www.html5canvastutorials.com/libraries/kinetic-v4.2.0.js"></script>
+    <script>
+      
+      var socket = io.connect('http://raspberrypi:8080');
+                
+      socket.on('connect', function() {
+        sendMessage(3,100,1);
+      });
+      
+      socket.on('message', function(message) {    
+          
+      });
+      
+      socket.on('disconnect', function() {
+                     
+      });
+      
+      var sendMessage = function(ledIndex, value, active){
+        socket.send(ledIndex + "," + value + "," + active);
+      };
+
+      var map = function(x, in_min, in_max, out_min, out_max){
+        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+      };
+
+      // this is to detect is mouse pressed or screen touched at the moment
+      var mousePressed = false;
+      window.onmousedown = function(e){
+        mousePressed = true;
+      }
+      window.onmouseup = function(e){
+        mousePressed = false;
+      }
+      window.ontouchstart = function(e){
+        mousePressed = true;
+      }
+      window.ontouchend = function(e){
+        mousePressed = false;
+      }
+
+      // load the control panel
+      window.onload = function() {
+
+        var stage = new Kinetic.Stage({
+          container: "container",
+          width: 610,
+          height: 400
+        });
+
+        var layer  = new Kinetic.Layer();
+
+        // TITLE
+        var textTitle = new Kinetic.Text(
+          {
+            x: 10,
+            y: 10,
+            text: 'led mixer',
+            fontSize: 20,
+            fontFamily: 'Calibri',
+            textFill: 'black'
+          }
+        );
+        
+        layer.add(textTitle);
+        
+
+        Slider = function() {
+          this.line;
+          this.rect;
+          this.height = 200;
+          this.width = 20;
+        }
+
+        var sliders = new Array();
+        var buttons = new Array();
+        var numLeds = 25;
+        for (var i = 0; i < numLeds; i++){
+
+          //sliders[i] = new Slider();
+          sliders[i] = new Kinetic.Group({
+            x: 23 * i + 14,
+            y: 50,
+          });
+
+          var w = 20;
+          var h = 160;
+
+          // this is to expand group click region
+          var back = new Kinetic.Rect({
+            x: 0,
+            y: 0,
+            width: w,
+            height: h
+          });
+
+          var line = new Kinetic.Line({
+            points: [w/2, 0, w/2, h],
+            stroke: 'orange',
+            strokeWidth: 4,
+            lineCap: 'round',
+            lineJoin: 'round'
+          });
+          
+          var rect = new Kinetic.Rect({
+            x: 0,
+            y: h - 6,
+            width: w,
+            height: 6,
+            cornerRadius: 1,
+            fill: 'gray',
+            stroke: 'gray',
+            strokeWidth: 2,
+            draggable: true,
+            dragBoundFunc: function(pos) {
+              return boundSlider(this, pos);
+            }
+          });
+
+          var boundSlider = function(obj, pos) {
+            var minY = obj.parent.getY();
+            var maxY = minY + h - 6;
+            var newY = pos.y < minY ? minY : pos.y > maxY ? maxY : pos.y;
+            return {x: obj.getAbsolutePosition().x, y: newY};
+          }
+
+          buttons[i] = new Kinetic.Rect({
+            x: sliders[i].getPosition().x,
+            y: sliders[i].getPosition().y + h + 10,
+            width : w,
+            height : w,
+            cornerRadius: 1,
+            fill: 'orange',
+            stroke: 'gray',
+            strokeWidth: 2,
+          });
+
+          // events look crazy because i wanted to give user ability
+          // to drag mouse or finger to set levels as well as drag and drop
+          // individual sliders.  could be a better way.
+          sliders[i].on("mousedown touchstart", function() {
+            mousePressed = true;
+            this.simulate("mouseover");
+          });
+          sliders[i].on("mouseup touchend", function() {
+            mousePressed = false;
+          });
+          buttons[i].on("mousedown touchstart", function() {
+            mousePressed = true;
+            this.simulate("mouseover");
+          });
+          buttons[i].on("mouseup touchend", function() {
+            mousePressed = false;
+          });
+
+          sliders[i].on("touchmove mouseover", function() {
+            if (mousePressed){
+              var pos;
+              pos = stage.getTouchPosition();
+              if (!pos)
+                pos = stage.getMousePosition();
+
+              var g = this;
+              var r = g.getChildren()[2];
+
+              var newPos = {x: r.getX(), y: pos.y - g.getY()};
+              //var newPos = boundSlider(r, newPos);
+
+              r.transitionTo({
+                x: newPos.x,
+                y: newPos.y,
+                duration: .05
+              });
+              stage.draw();
+              
+              var hue = Math.round(map(newPos.y, 155, 0, 0, 255));
+              console.log(hue);
+              sendMessage(sliders.indexOf(this), hue, 1);
+            
+            }  
+          });
+
+          buttons[i].on("touchmove mouseover", function() {
+            if (mousePressed){
+              if (this.getFill() == "orange")
+                this.setFill("none");
+              else
+                this.setFill("orange");
+
+              stage.draw();
+            }  
+          });
+
+          rect.on("touchmove mousemove", function() {
+            //var touchPos = stage.getTouchPosition();
+            //var x = touchPos.x;
+            //var y = touchPos.y;
+            //writeMessage(messageLayer, "x: " + x + ", y: " + y);
+            //sendmsg("0",x)
+          }); 
+
+          sliders[i].add(back);
+          sliders[i].add(line);
+          sliders[i].add(rect);
+
+          layer.add(sliders[i]);
+          layer.add(buttons[i]);
+        }
+
+        stage.add(layer);
+      };
+
+    </script>
+  </head>
+  <body onmousedown="return false;">
+    <div id="container"></div>
+  </body>
+</html>
